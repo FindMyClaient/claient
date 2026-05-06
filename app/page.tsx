@@ -7,7 +7,7 @@ export default function Landing() {
     <div className="min-h-screen bg-[#060606] text-white flex flex-col">
       <nav className="border-b border-white/5 bg-[#0d0d0d]">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-          <img src="/1.svg" alt="CLAIENT" className="h-12 w-auto" />
+          <img src="/1.svg" alt="CLAIENT" className="h-24 w-auto" />
           <div className="flex items-center gap-8 text-sm text-white/50">
             <a href="#producto" className="hover:text-white transition">Producto</a>
             <a href="#como-funciona" className="hover:text-white transition">Cómo funciona</a>

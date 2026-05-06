@@ -270,7 +270,19 @@ export async function POST(req: NextRequest) {
       console.error('PDL error:', e)
     }
 
-    const resultados = [...googleResults, ...apolloResults, ...denueResults, ...rrResults, ...pdlResults]
+    
+    // ── DEDUPLICAR ───────────────────────────────────────
+    const seen = new Set()
+    const resultadosFinal = [...googleResults, ...apolloResults, ...denueResults, ...rrResults, ...pdlResults]
+      .filter(r => {
+        const key = (r.empresa + '_' + r.contacto).toLowerCase().replace(/\s/g, '')
+        if (seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
+      .sort((a, b) => b.score - a.score)
+
+    const resultados = resultadosFinal
 
     if (resultados.length === 0) {
       return NextResponse.json({ error: 'No se encontraron resultados. Intenta con otros filtros.' })

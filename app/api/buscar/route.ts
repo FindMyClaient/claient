@@ -192,7 +192,85 @@ export async function POST(req: NextRequest) {
       console.error('DENUE error:', e)
     }
 
-    const resultados = [...googleResults, ...apolloResults, ...denueResults]
+    
+    // ── ROCKETREACH ─────────────────────────────────────
+    let rrResults: any[] = []
+    try {
+      const rrKey = process.env.ROCKETREACH_API_KEY || ''
+      if (rrKey) {
+        const rrPayload: any = { start: 1, pageSize: 10 }
+        if (busqueda) rrPayload.name = busqueda
+        if (estado && estado !== 'Todo México') rrPayload.location = [estado + ', Mexico']
+        else rrPayload.location = ['Mexico']
+        if (industria && industria !== 'Todas las industrias') rrPayload.industry = [industria]
+        const rrRes = await fetch('https://api.rocketreach.co/v2/api/search', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Api-Key': rrKey },
+          body: JSON.stringify({ query: rrPayload }),
+        })
+        if (rrRes.ok) {
+          const rrData = await rrRes.json()
+          rrResults = (rrData.profiles || []).slice(0, 10).map((p: any) => ({
+            id: 'rr_' + (p.id || Math.random()),
+            empresa: p.current_employer || 'Sin nombre',
+            industria: p.industry || 'Sin clasificar',
+            ciudad: p.location || estado || 'México',
+            empleados: 'Sin datos',
+            contacto: ((p.first_name || '') + ' ' + (p.last_name || '')).trim(),
+            cargo: p.current_title || 'Sin cargo',
+            email: p.email || null,
+            emailOculto: true,
+            telefono: null,
+            telefonoOculto: true,
+            linkedin: p.linkedin_url || null,
+            score: p.email ? 80 : 50,
+            fuente: 'RocketReach',
+          }))
+        }
+      }
+    } catch (e) {
+      console.error('RocketReach error:', e)
+    }
+
+    // ── PEOPLE DATA LABS ─────────────────────────────────
+    let pdlResults: any[] = []
+    try {
+      const pdlKey = process.env.PDL_API_KEY || ''
+      if (pdlKey) {
+        const pdlQuery: any = { location_country: 'mexico', size: 10 }
+        if (busqueda) pdlQuery.job_company_name = busqueda
+        if (industria && industria !== 'Todas las industrias') pdlQuery.industry = industria.toLowerCase()
+        if (estado && estado !== 'Todo México') pdlQuery.location_region = estado
+        const pdlRes = await fetch('https://api.peopledatalabs.com/v5/person/search', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Api-Key': pdlKey },
+          body: JSON.stringify({ query: pdlQuery, size: 10, dataset: 'all' }),
+        })
+        if (pdlRes.ok) {
+          const pdlData = await pdlRes.json()
+          pdlResults = (pdlData.data || []).slice(0, 10).map((p: any) => ({
+            id: 'pdl_' + (p.id || Math.random()),
+            empresa: p.job_company_name || 'Sin nombre',
+            industria: p.industry || 'Sin clasificar',
+            ciudad: p.location_locality || p.location_region || 'México',
+            empleados: p.job_company_size || 'Sin datos',
+            contacto: ((p.first_name || '') + ' ' + (p.last_name || '')).trim(),
+            cargo: p.job_title || 'Sin cargo',
+            email: p.work_email || p.personal_emails?.[0] || null,
+            emailOculto: true,
+            telefono: p.mobile_phone || null,
+            telefonoOculto: true,
+            linkedin: p.linkedin_url || null,
+            score: p.work_email ? 85 : 55,
+            fuente: 'PDL',
+          }))
+        }
+      }
+    } catch (e) {
+      console.error('PDL error:', e)
+    }
+
+    const resultados = [...googleResults, ...apolloResults, ...denueResults, ...rrResults, ...pdlResults]
 
     if (resultados.length === 0) {
       return NextResponse.json({ error: 'No se encontraron resultados. Intenta con otros filtros.' })

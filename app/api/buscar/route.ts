@@ -3,12 +3,13 @@ import { NextRequest, NextResponse } from 'next/server'
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const { busqueda, industria, departamento, headcount, estado, seniority, keywords } = body
+    const { busqueda, industria, departamento, headcount, estado, seniority, keywords, coords } = body
 
+    // ── APOLLO ──────────────────────────────────────────
     const payload: Record<string, any> = {
       page: 1,
       per_page: 25,
-      person_locations: estado && estado !== 'Todo México' ? [`${estado}, Mexico`] : ['Mexico'],
+      person_locations: estado && estado !== 'Todo México' ? [estado + ', Mexico'] : ['Mexico'],
     }
 
     if (busqueda) payload.q_keywords = busqueda
@@ -71,47 +72,116 @@ export async function POST(req: NextRequest) {
       if (map[industria]) payload.organization_industry_tag_ids = map[industria]
     }
 
-    const response = await fetch('https://api.apollo.io/v1/mixed_people/api_search', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Api-Key': process.env.APOLLO_API_KEY || '',
-      },
-      body: JSON.stringify(payload),
-    })
-
-    const text = await response.text()
-
-    if (!response.ok) {
-      console.error('Apollo error:', response.status, text)
-      return NextResponse.json({ error: `Apollo error ${response.status}: ${text}` }, { status: 500 })
+    // ── GOOGLE MAPS (si hay coords) ──────────────────────
+    let googleResults: any[] = []
+    if (coords?.lat && coords?.lng) {
+      try {
+        const keyword = busqueda || industria || 'empresa'
+        const radius = Math.round((coords.radio || 1) * 1000)
+        const mapsUrl = 'https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=' + coords.lat + ',' + coords.lng + '&radius=' + radius + '&keyword=' + encodeURIComponent(keyword) + '&language=es&key=' + (process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY || '')
+        const mapsRes = await fetch(mapsUrl)
+        const mapsData = await mapsRes.json()
+        googleResults = (mapsData.results || []).slice(0, 10).map((place: any) => ({
+          id: 'maps_' + place.place_id,
+          empresa: place.name,
+          industria: place.types?.[0]?.replace(/_/g, ' ') || 'Local',
+          ciudad: place.vicinity || estado || 'México',
+          distancia: calcDistancia(coords.lat, coords.lng, place.geometry?.location?.lat, place.geometry?.location?.lng),
+          empleados: 'Sin datos',
+          contacto: 'Sin datos',
+          cargo: 'Sin datos',
+          email: null,
+          emailOculto: true,
+          telefono: null,
+          telefonoOculto: true,
+          linkedin: null,
+          score: place.rating ? Math.round(place.rating * 18) : 50,
+          fuente: 'Google Maps',
+        }))
+      } catch (e) {
+        console.error('Google Maps error:', e)
+      }
     }
 
-    const data = JSON.parse(text)
-    const people = data.people || []
+    // ── APOLLO SEARCH ────────────────────────────────────
+    let apolloResults: any[] = []
+    try {
+      const response = await fetch('https://api.apollo.io/v1/mixed_people/api_search', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Api-Key': process.env.APOLLO_API_KEY || '',
+        },
+        body: JSON.stringify(payload),
+      })
+      const text = await response.text()
+      if (response.ok) {
+        const data = JSON.parse(text)
+        const people = data.people || []
+        apolloResults = people.map((p: any) => ({
+          id: p.id || Math.random().toString(),
+          empresa: p.organization?.name || 'Sin nombre',
+          industria: p.organization?.industry || 'Sin clasificar',
+          ciudad: p.city || p.state || 'México',
+          empleados: formatEmpleados(p.organization?.estimated_num_employees),
+          contacto: ((p.first_name || '') + ' ' + (p.last_name || '')).trim() || 'Sin nombre',
+          cargo: p.title || 'Sin cargo',
+          email: p.email || null,
+          emailOculto: true,
+          telefono: p.phone_numbers?.[0]?.sanitized_number || null,
+          telefonoOculto: true,
+          linkedin: p.linkedin_url || null,
+          score: calcScore(p),
+          fuente: 'Apollo',
+        }))
+      }
+    } catch (e) {
+      console.error('Apollo error:', e)
+    }
 
-    const resultados = people.map((p: any) => ({
-      id: p.id || Math.random().toString(),
-      empresa: p.organization?.name || 'Sin nombre',
-      industria: p.organization?.industry || 'Sin clasificar',
-      ciudad: p.city || p.state || 'México',
-      empleados: formatEmpleados(p.organization?.estimated_num_employees),
-      contacto: `${p.first_name || ''} ${p.last_name || ''}`.trim() || 'Sin nombre',
-      cargo: p.title || 'Sin cargo',
-      email: p.email || null,
-      emailOculto: true,
-      telefono: p.phone_numbers?.[0]?.sanitized_number || null,
-      telefonoOculto: true,
-      linkedin: p.linkedin_url || null,
-      score: calcScore(p),
-    }))
+    // ── HUNTER.IO (verifica emails de Apollo) ────────────
+    const hunterKey = process.env.HUNTER_API_KEY || ''
+    if (hunterKey && apolloResults.length > 0) {
+      const topResults = apolloResults.slice(0, 5)
+      await Promise.all(topResults.map(async (r: any) => {
+        if (!r.email && r.empresa) {
+          try {
+            const domain = r.empresa.toLowerCase().replace(/[^a-z0-9]/g, '') + '.com.mx'
+            const hunterUrl = 'https://api.hunter.io/v2/domain-search?domain=' + domain + '&api_key=' + hunterKey + '&limit=1'
+            const hunterRes = await fetch(hunterUrl)
+            const hunterData = await hunterRes.json()
+            const firstEmail = hunterData.data?.emails?.[0]
+            if (firstEmail) {
+              r.email = firstEmail.value
+              r.score = Math.min(r.score + 15, 100)
+            }
+          } catch {}
+        }
+      }))
+    }
 
-    return NextResponse.json({ resultados, total: data.pagination?.total_entries || resultados.length })
+    const resultados = [...googleResults, ...apolloResults]
+
+    if (resultados.length === 0) {
+      return NextResponse.json({ error: 'No se encontraron resultados. Intenta con otros filtros.' })
+    }
+
+    return NextResponse.json({ resultados, total: resultados.length })
 
   } catch (err: any) {
     console.error('Error interno:', err)
     return NextResponse.json({ error: err.message || 'Error interno' }, { status: 500 })
   }
+}
+
+function calcDistancia(lat1: number, lng1: number, lat2: number, lng2: number): string {
+  if (!lat2 || !lng2) return 'N/A'
+  const R = 6371000
+  const dLat = (lat2 - lat1) * Math.PI / 180
+  const dLng = (lng2 - lng1) * Math.PI / 180
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dLng/2)**2
+  const d = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))
+  return d < 1000 ? Math.round(d) + ' m' : (d/1000).toFixed(1) + ' km'
 }
 
 function formatEmpleados(n: number | undefined): string {

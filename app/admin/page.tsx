@@ -1,7 +1,7 @@
 'use client'
 import { useState, useRef, useEffect } from 'react'
-import { createClient } from '@/lib/supabase'
 import { Search, MapPin, Users, Filter, Download, ChevronDown, Eye, Bookmark, BookmarkCheck, X, ChevronRight, Navigation, Loader2 } from 'lucide-react'
+import { createClient } from '@/lib/supabase'
 
 const industriasList = [
   'Todas las industrias','Transporte y Logística','Manufactura','Construcción',
@@ -73,13 +73,16 @@ const GOOGLE_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY || ''
 
 export default function Buscador() {
   const supabase = createClient()
+  const [authChecked, setAuthChecked] = useState(false)
 
   useEffect(() => {
-    const checkSession = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) window.location.href = '/login'
-    }
-    checkSession()
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!session) {
+        window.location.replace('/login')
+      } else {
+        setAuthChecked(true)
+      }
+    })
   }, [])
 
   const [busqueda, setBusqueda] = useState('')
@@ -190,7 +193,6 @@ export default function Buscador() {
     if (inputRef.current) inputRef.current.value = ''
   }
 
-  // ── BÚSQUEDA REAL CON APOLLO API ──────────────────────────────
   const handleBuscar = async () => {
     setBuscando(true)
     setResultados([])
@@ -200,28 +202,19 @@ export default function Buscador() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          busqueda,
-          industria,
-          departamento,
-          headcount,
-          estado,
-          seniority,
-          keywords,
-          flotilla,
+          busqueda, industria, departamento, headcount, estado,
+          seniority, keywords, flotilla,
           coords: modoGeo && coords ? { lat: coords.lat, lng: coords.lng, radio: radioKm } : null,
         }),
       })
       const data = await res.json()
       if (data.resultados && data.resultados.length > 0) {
         setResultados(data.resultados)
-      } else if (data.error) {
-        setError(data.error)
       } else {
         setError('No se encontraron resultados. Intenta con otros filtros.')
       }
     } catch (err) {
-      console.error('Error:', err)
-      setError('Error de conexión. Verifica tu internet e intenta de nuevo.')
+      setError('Error de conexión. Intenta de nuevo.')
     }
     setBuscando(false)
   }
@@ -307,12 +300,20 @@ export default function Buscador() {
     setKeywords(''); limpiarGeo(); setResultados([]); setError('')
   }
 
+  if (!authChecked) {
+    return (
+      <div className="min-h-screen bg-[#060606] flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-[#0cc0df] border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-[#060606] text-white">
       <div className="border-b border-white/5 bg-[#0d0d0d]">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <img src="/1.svg" alt="CLAIENT" className="h-35 w-auto" />
+            <img src="/1.svg" alt="CLAIENT" className="h-8 w-auto" />
             <span className="text-xs text-[#0cc0df] border border-[#0cc0df]/30 rounded-full px-2 py-0.5">B2B Search</span>
           </div>
           <div className="flex items-center gap-6 text-sm">
@@ -322,6 +323,12 @@ export default function Buscador() {
               <span className={`font-bold text-base ${creditos < 100 ? 'text-red-400' : 'text-[#0cc0df]'}`}>{creditos.toLocaleString()}</span>
               <a href="/planes" className="text-xs text-[#0cc0df] border border-[#0cc0df]/30 rounded-full px-2 py-0.5 hover:bg-[#0cc0df]/10 transition">+ Comprar</a>
             </div>
+            <button
+              onClick={async () => { await supabase.auth.signOut(); window.location.href = '/login' }}
+              className="text-xs text-white/40 hover:text-white transition"
+            >
+              Cerrar sesión
+            </button>
             <div className="w-8 h-8 rounded-full bg-[#0cc0df] flex items-center justify-center text-black font-bold text-sm">R</div>
           </div>
         </div>
@@ -333,7 +340,6 @@ export default function Buscador() {
           <p className="text-white/40">Encuentra empresas y contactos clave en México y LATAM</p>
         </div>
 
-        {/* Panel de ubicación */}
         <div className="bg-[#0d0d0d] border border-white/5 rounded-xl p-5 mb-4">
           <div className="flex items-center gap-2 mb-3">
             <MapPin className="w-4 h-4 text-[#0cc0df]" />
@@ -368,7 +374,6 @@ export default function Buscador() {
           )}
         </div>
 
-        {/* Barra principal */}
         <div className="flex gap-3 mb-3">
           <div className="flex-1 relative">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-white/30 w-5 h-5" />
@@ -388,7 +393,6 @@ export default function Buscador() {
           </button>
         </div>
 
-        {/* Tags activos */}
         {filtrosActivos.length > 0 && (
           <div className="flex flex-wrap gap-2 mb-4">
             {filtrosActivos.map(f => <span key={f} className="text-xs bg-[#0cc0df]/10 text-[#0cc0df] border border-[#0cc0df]/20 rounded-full px-3 py-1">{f}</span>)}
@@ -396,7 +400,6 @@ export default function Buscador() {
           </div>
         )}
 
-        {/* Saved Searches */}
         {mostrarSaved && (
           <div className="bg-[#0d0d0d] border border-white/5 rounded-xl p-5 mb-6">
             <div className="flex items-center justify-between mb-4">
@@ -436,7 +439,6 @@ export default function Buscador() {
           </div>
         )}
 
-        {/* Filtros */}
         {mostrarFiltros && (
           <div className="bg-[#0d0d0d] border border-white/5 rounded-xl p-6 mb-6">
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
@@ -458,7 +460,6 @@ export default function Buscador() {
           </div>
         )}
 
-        {/* Resultados */}
         {resultados.length > 0 && (
           <div>
             <div className="flex items-center justify-between mb-4">
@@ -509,21 +510,29 @@ export default function Buscador() {
                         <td className="px-4 py-4 min-w-[150px]"><div className="text-sm font-medium text-white">{r.contacto}</div></td>
                         <td className="px-4 py-4 min-w-[200px]"><div className="text-sm text-white/70">{r.cargo}</div></td>
                         <td className="px-4 py-4 min-w-[220px]">
-                          {emailsRevelados.includes(r.id) ? (
-                            <div className="text-sm text-white/80">{r.email || 'No disponible'}</div>
+                          {r.email ? (
+                            emailsRevelados.includes(r.id) ? (
+                              <div className="text-sm text-white/80">{r.email}</div>
+                            ) : (
+                              <button onClick={() => revelarEmail(r.id)} className="flex items-center gap-1.5 text-xs text-[#0cc0df] border border-[#0cc0df]/30 rounded-lg px-2.5 py-1.5 hover:bg-[#0cc0df]/10 transition">
+                                <Eye className="w-3.5 h-3.5" />Revelar email
+                              </button>
+                            )
                           ) : (
-                            <button onClick={() => revelarEmail(r.id)} className="flex items-center gap-1.5 text-xs text-[#0cc0df] border border-[#0cc0df]/30 rounded-lg px-2.5 py-1.5 hover:bg-[#0cc0df]/10 transition">
-                              <Eye className="w-3.5 h-3.5" />Revelar email
-                            </button>
+                            <span className="text-xs text-white/20">No disponible</span>
                           )}
                         </td>
                         <td className="px-4 py-4 min-w-[180px]">
-                          {telefonosRevelados.includes(r.id) ? (
-                            <div className="text-sm text-white/80">{r.telefono || 'No disponible'}</div>
+                          {r.telefono ? (
+                            telefonosRevelados.includes(r.id) ? (
+                              <div className="text-sm text-white/80">{r.telefono}</div>
+                            ) : (
+                              <button onClick={() => revelarTelefono(r.id)} className="flex items-center gap-1.5 text-xs text-[#0cc0df] border border-[#0cc0df]/30 rounded-lg px-2.5 py-1.5 hover:bg-[#0cc0df]/10 transition">
+                                <Eye className="w-3.5 h-3.5" />Revelar tel.
+                              </button>
+                            )
                           ) : (
-                            <button onClick={() => revelarTelefono(r.id)} className="flex items-center gap-1.5 text-xs text-[#0cc0df] border border-[#0cc0df]/30 rounded-lg px-2.5 py-1.5 hover:bg-[#0cc0df]/10 transition">
-                              <Eye className="w-3.5 h-3.5" />Revelar tel.
-                            </button>
+                            <span className="text-xs text-white/20">No disponible</span>
                           )}
                         </td>
                         <td className="px-4 py-4">
@@ -539,7 +548,6 @@ export default function Buscador() {
           </div>
         )}
 
-        {/* Error */}
         {error && !buscando && (
           <div className="text-center py-16">
             <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -550,7 +558,6 @@ export default function Buscador() {
           </div>
         )}
 
-        {/* Estado vacío */}
         {resultados.length === 0 && !buscando && !error && (
           <div className="text-center py-20">
             <div className="w-16 h-16 bg-[#0cc0df]/10 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -561,7 +568,6 @@ export default function Buscador() {
           </div>
         )}
 
-        {/* Buscando */}
         {buscando && (
           <div className="text-center py-20">
             <div className="w-16 h-16 bg-[#0cc0df]/10 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">

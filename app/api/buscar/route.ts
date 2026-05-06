@@ -271,16 +271,27 @@ export async function POST(req: NextRequest) {
     }
 
     
-    // ── DEDUPLICAR ───────────────────────────────────────
-    const seen = new Set()
-    const resultadosFinal = [...googleResults, ...apolloResults, ...denueResults, ...rrResults, ...pdlResults]
-      .filter(r => {
-        const key = (r.empresa + '_' + r.contacto).toLowerCase().replace(/\s/g, '')
-        if (seen.has(key)) return false
-        seen.add(key)
-        return true
-      })
-      .sort((a, b) => b.score - a.score)
+    
+    // ── DEDUPLICAR (conserva el más completo) ────────────
+    const empresaMap = new Map()
+    const allResults = [...googleResults, ...apolloResults, ...denueResults, ...rrResults, ...pdlResults]
+    
+    for (const r of allResults) {
+      const key = r.empresa.toLowerCase().replace(/[^a-z0-9]/g, '')
+      if (!empresaMap.has(key)) {
+        empresaMap.set(key, r)
+      } else {
+        const existing = empresaMap.get(key)
+        const existingScore = (existing.email ? 40 : 0) + (existing.telefono ? 30 : 0) + (existing.linkedin ? 20 : 0) + existing.score
+        const newScore = (r.email ? 40 : 0) + (r.telefono ? 30 : 0) + (r.linkedin ? 20 : 0) + r.score
+        if (newScore > existingScore) {
+          empresaMap.set(key, { ...existing, ...r, email: r.email || existing.email, telefono: r.telefono || existing.telefono, linkedin: r.linkedin || existing.linkedin })
+        } else {
+          empresaMap.set(key, { ...r, ...existing, email: existing.email || r.email, telefono: existing.telefono || r.telefono, linkedin: existing.linkedin || r.linkedin })
+        }
+      }
+    }
+    const resultadosFinal = Array.from(empresaMap.values()).sort((a, b) => b.score - a.score)
 
     const resultados = resultadosFinal
 

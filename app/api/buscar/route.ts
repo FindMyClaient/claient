@@ -160,7 +160,39 @@ export async function POST(req: NextRequest) {
       }))
     }
 
-    const resultados = [...googleResults, ...apolloResults]
+    
+    // ── DENUE INEGI ─────────────────────────────────────
+    let denueResults: any[] = []
+    try {
+      const token = process.env.DENUE_TOKEN || ''
+      const q = busqueda || industria || 'empresa'
+      const entidad = estado && estado !== 'Todo México' ? '09' : '00'
+      const denueUrl = 'https://www.inegi.org.mx/app/api/denue/v1/consulta/BuscarAreaActividadDescripcion/' + encodeURIComponent(q) + '/' + entidad + '/0/0/1/25/0/0/0/0/' + token
+      const denueRes = await fetch(denueUrl)
+      if (denueRes.ok) {
+        const denueData = await denueRes.json()
+        denueResults = (Array.isArray(denueData) ? denueData : []).slice(0, 10).map((e: any) => ({
+          id: 'denue_' + e.id,
+          empresa: e.nom_estab || 'Sin nombre',
+          industria: e.nombre_act || 'Sin clasificar',
+          ciudad: (e.municipio || '') + ', ' + (e.entidad || ''),
+          empleados: e.per_ocu || 'Sin datos',
+          contacto: 'Sin datos',
+          cargo: 'Sin datos',
+          email: null,
+          emailOculto: true,
+          telefono: e.telefono || null,
+          telefonoOculto: true,
+          linkedin: null,
+          score: e.telefono ? 60 : 40,
+          fuente: 'DENUE INEGI',
+        }))
+      }
+    } catch (e) {
+      console.error('DENUE error:', e)
+    }
+
+    const resultados = [...googleResults, ...apolloResults, ...denueResults]
 
     if (resultados.length === 0) {
       return NextResponse.json({ error: 'No se encontraron resultados. Intenta con otros filtros.' })

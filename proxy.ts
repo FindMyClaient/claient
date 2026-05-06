@@ -1,17 +1,7 @@
-import { NextResponse, type NextRequest } from 'next/server'
+import { NextResponse } from 'next/server'
+import type { NextRequest } from 'next/server'
 
-export function middleware(request: NextRequest) {
-  const { pathname } = request.nextUrl
-  const isPublic = ['/login', '/planes', '/api', '/_next'].some(p => pathname.startsWith(p))
-  
-  if (isPublic) return NextResponse.next()
-
-  const token = request.cookies.get('sb-gwgahijbkkvrcmdpwcoo-auth-token')
-  
-  if (!token) {
-    return NextResponse.redirect(new URL('/login', request.url))
-  }
-
+export function proxy(request: NextRequest) {
   return NextResponse.next()
 }
 

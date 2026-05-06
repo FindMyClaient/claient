@@ -534,8 +534,8 @@ footer{
     <a href="#precios">Precios</a>
   </div>
   <div class="nav-actions">
-    <a href="https://www.findmyclaient.com" class="btn-ghost">Iniciar sesión</a>
-    <a href="https://www.findmyclaient.com/planes" class="btn-primary">Comenzar →</a>
+    <a href="/login" class="btn-ghost">Iniciar sesión</a>
+    <a href="/planes" class="btn-primary">Comenzar →</a>
   </div>
 </nav>
 
@@ -553,7 +553,7 @@ footer{
   <p>Busca empresas y contactos clave en México y LATAM. Datos verificados de múltiples fuentes, scoring con IA y exportación instantánea.</p>
 
   <div class="hero-cta">
-    <a href="https://www.findmyclaient.com/planes" class="cta-main">Comenzar ahora</a>
+    <a href="/planes" class="cta-main">Comenzar ahora</a>
     <a href="#producto" class="cta-sec">
       Ver el producto
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
@@ -715,13 +715,13 @@ footer{
 
 <!-- DUAL CTA -->
 <div class="dual-cta reveal">
-  <a href="https://www.findmyclaient.com/planes" class="cta-card featured">
+  <a href="/planes" class="cta-card featured">
     <div class="cta-card-label">Para empresas que venden</div>
     <div class="cta-card-title">Empieza a encontrar<br>clientes hoy</div>
     <div class="cta-card-desc">Accede a millones de empresas y contactos verificados en México. Sin contratos anuales. Factura CFDI incluida.</div>
     <div class="cta-card-btn">Ver planes y precios →</div>
   </a>
-  <a href="#registro-empresa" class="cta-card">
+  <a href="/registro" class="cta-card">
     <div class="cta-card-label">Para empresas que quieren ser encontradas</div>
     <div class="cta-card-title">Registra tu empresa<br>en nuestra base de datos</div>
     <div class="cta-card-desc">Aparece primero en las búsquedas de compradores B2B activos. Registro gratuito, sin compromisos.</div>
@@ -762,7 +762,7 @@ footer{
           <li>Búsqueda por geolocalización</li>
           <li>Búsquedas guardadas</li>
         </ul>
-        <a href="https://www.findmyclaient.com/planes" class="plan-btn outline">Contratar Pro</a>
+        <a href="/planes" class="plan-btn outline">Contratar Pro</a>
       </div>
 
       <div class="plan popular">
@@ -785,13 +785,13 @@ footer{
           <li>Distribución de créditos por usuario</li>
           <li>Usuario extra: +\$500 MXN</li>
         </ul>
-        <a href="https://www.findmyclaient.com/planes" class="plan-btn filled">Contratar Business</a>
+        <a href="/planes" class="plan-btn filled">Contratar Business</a>
       </div>
     </div>
 
     <p style="text-align:center;font-size:13px;color:var(--text-dimmer);margin-top:24px">
       ¿Necesitas probar primero? El plan Free incluye 5 búsquedas y 10 créditos.
-      <a href="https://www.findmyclaient.com/planes" style="color:var(--cyan);text-decoration:none"> Comenzar gratis →</a>
+      <a href="/planes" style="color:var(--cyan);text-decoration:none"> Comenzar gratis →</a>
     </p>
   </div>
 </section>
@@ -809,7 +809,7 @@ footer{
         <li><a href="#producto">Buscador B2B</a></li>
         <li><a href="#como-funciona">Cómo funciona</a></li>
         <li><a href="#precios">Precios</a></li>
-        <li><a href="https://www.findmyclaient.com">Iniciar sesión</a></li>
+        <li><a href="/login">Iniciar sesión</a></li>
       </ul>
     </div>
     <div class="footer-col">

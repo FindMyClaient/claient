@@ -1,5 +1,6 @@
 'use client'
 import { useState, useRef, useEffect } from 'react'
+import { createClient } from '@/lib/supabase'
 import { Search, MapPin, Users, Filter, Download, ChevronDown, Eye, Bookmark, BookmarkCheck, X, ChevronRight, Navigation, Loader2 } from 'lucide-react'
 
 const industriasList = [
@@ -71,6 +72,16 @@ type SavedSearch = { id: number; nombre: string; filtros: Record<string, string>
 const GOOGLE_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY || ''
 
 export default function Buscador() {
+  const supabase = createClient()
+
+  useEffect(() => {
+    const checkSession = async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) window.location.href = '/login'
+    }
+    checkSession()
+  }, [])
+
   const [busqueda, setBusqueda] = useState('')
   const [industria, setIndustria] = useState('Todas las industrias')
   const [departamento, setDepartamento] = useState('Todos los departamentos')

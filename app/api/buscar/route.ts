@@ -13,6 +13,30 @@ function limpiarEmail(email: string | null | undefined): string | null {
   return email!.toLowerCase().trim()
 }
 
+function isEmailGenerico(email: string): boolean {
+  const e = email.toLowerCase().trim()
+  const prefijos = ['info@', 'contacto@', 'contact@', 'ventas@', 'sales@', 'admin@', 'soporte@', 'support@', 'hola@', 'hello@', 'rh@', 'rrhh@', 'hr@', 'trabajo@', 'jobs@', 'careers@', 'noreply@', 'no-reply@']
+  return prefijos.some(p => e.startsWith(p))
+}
+
+async function getApolloDomain(empresa: string, apiKey: string): Promise<string | null> {
+  try {
+    const url = 'https://api.apollo.io/v1/organizations/search'
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Api-Key': apiKey },
+      body: JSON.stringify({ q_organization_name: empresa, page: 1, per_page: 1 }),
+    })
+    if (!res.ok) return null
+    const data = await res.json()
+    const org = data.organizations?.[0] || data.accounts?.[0]
+    if (!org) return null
+    const domain = org.primary_domain || org.website_url || null
+    if (!domain) return null
+    return domain.replace(/https?:\/\//, '').replace(/^www\./, '').split('/')[0]
+  } catch { return null }
+}
+
 export async function POST(req: NextRequest) {
   const fuentesUsadas: Record<string, { resultados: number; status: string }> = {}
 
@@ -21,8 +45,7 @@ export async function POST(req: NextRequest) {
     const { busqueda, industria, departamento, headcount, estado, seniority, keywords, coords } = body
 
     const payload: Record<string, any> = {
-      page: 1,
-      per_page: 25,
+      page: 1, per_page: 25,
       person_locations: estado && estado !== 'Todo México' ? [estado + ', Mexico'] : ['Mexico'],
     }
     if (busqueda) payload.q_keywords = busqueda
@@ -51,7 +74,6 @@ export async function POST(req: NextRequest) {
       if (map[headcount]) payload.organization_num_employees_ranges = map[headcount]
     }
 
-    // GOOGLE MAPS
     let googleResults: any[] = []
     if (coords?.lat && coords?.lng) {
       try {
@@ -61,27 +83,25 @@ export async function POST(req: NextRequest) {
         const mapsRes = await fetch(mapsUrl)
         const mapsData = await mapsRes.json()
         googleResults = (mapsData.results || []).slice(0, 10).map((place: any) => ({
-          id: 'maps_' + place.place_id,
-          empresa: place.name,industria: place.types?.[0]?.replace(/_/g, ' ') || 'Local',
+          id: 'maps_' + place.place_id, empresa: place.name,
+          industria: place.types?.[0]?.replace(/_/g, ' ') || 'Local',
           ciudad: place.vicinity || estado || 'México',
           distancia: calcDistancia(coords.lat, coords.lng, place.geometry?.location?.lat, place.geometry?.location?.lng),
-          empleados: 'Sin datos',contacto: 'Sin datos',cargo: 'Sin datos',
-          email: null,emailOculto: true,emailFuente: null,
-          telefono: null,telefonoOculto: true,telefonoFuente: null,
-          linkedin: null,score: place.rating ? Math.round(place.rating * 18) : 50,fuente: 'Google Maps',
+          empleados: 'Sin datos', contacto: 'Sin datos', cargo: 'Sin datos',
+          email: null, emailOculto: true, emailFuente: null,
+          telefono: null, telefonoOculto: true, telefonoFuente: null,
+          linkedin: null, score: place.rating ? Math.round(place.rating * 18) : 50, fuente: 'Google Maps',
         }))
         fuentesUsadas['Google Maps'] = { resultados: googleResults.length, status: 'ok' }
-      } catch (e) {
-        fuentesUsadas['Google Maps'] = { resultados: 0, status: 'error' }
-      }
+      } catch { fuentesUsadas['Google Maps'] = { resultados: 0, status: 'error' } }
     }
 
-    // APOLLO
     let apolloResults: any[] = []
+    const apolloKey = process.env.APOLLO_API_KEY || ''
     try {
       const response = await fetch('https://api.apollo.io/v1/mixed_people/api_search', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Api-Key': process.env.APOLLO_API_KEY || '' },
+        headers: { 'Content-Type': 'application/json', 'X-Api-Key': apolloKey },
         body: JSON.stringify(payload),
       })
       if (response.ok) {
@@ -93,6 +113,8 @@ export async function POST(req: NextRequest) {
           ciudad: p.city || p.state || 'México',
           empleados: formatEmpleados(p.organization?.estimated_num_employees),
           contacto: ((p.first_name || '') + ' ' + (p.last_name || '')).trim() || 'Sin nombre',
+          first_name: p.first_name || '',
+          last_name: p.last_name || '',
           cargo: p.title || 'Sin cargo',
           email: limpiarEmail(p.email),
           emailOculto: true,
@@ -103,44 +125,52 @@ export async function POST(req: NextRequest) {
           linkedin: p.linkedin_url || null,
           score: calcScore(p),
           fuente: 'Apollo',
-          empresa_dominio: p.organization?.website_url || null,
+          empresa_dominio: p.organization?.primary_domain || p.organization?.website_url || null,
         }))
         fuentesUsadas['Apollo'] = { resultados: apolloResults.length, status: 'ok' }
       } else {
         fuentesUsadas['Apollo'] = { resultados: 0, status: 'error' }
       }
-    } catch (e) {
-      fuentesUsadas['Apollo'] = { resultados: 0, status: 'error' }
+    } catch { fuentesUsadas['Apollo'] = { resultados: 0, status: 'error' } }
+
+    const empresasUnicas = Array.from(new Set(apolloResults.filter(r => !r.empresa_dominio).map(r => r.empresa)))
+    const dominiosMap = new Map<string, string>()
+    if (apolloKey && empresasUnicas.length > 0) {
+      await Promise.all(empresasUnicas.slice(0, 10).map(async (empresa) => {
+        const domain = await getApolloDomain(empresa as string, apolloKey)
+        if (domain) dominiosMap.set(empresa as string, domain)
+      }))
+      apolloResults.forEach((r: any) => {
+        if (!r.empresa_dominio && dominiosMap.has(r.empresa)) {
+          r.empresa_dominio = dominiosMap.get(r.empresa)
+        } else if (r.empresa_dominio) {
+          r.empresa_dominio = r.empresa_dominio.replace(/https?:\/\//, '').replace(/^www\./, '').split('/')[0]
+        }
+      })
     }
 
-    // PROSPEO - Encuentra emails reales
     const prospeoKey = process.env.PROSPEO_API_KEY || ''
     let prospeoCount = 0
     if (prospeoKey && apolloResults.length > 0) {
-      const sinEmail = apolloResults.filter(r => !r.email && r.contacto && r.contacto !== 'Sin nombre').slice(0, 10)
+      const sinEmail = apolloResults.filter((r: any) => !r.email && r.first_name && r.last_name && r.empresa_dominio).slice(0, 10)
       await Promise.all(sinEmail.map(async (r: any) => {
         try {
-          const [first, ...rest] = r.contacto.split(' ')
-          const last = rest.join(' ')
-          if (!first || !last) return
-          let domain = ''
-          if (r.empresa_dominio) {
-            domain = r.empresa_dominio.replace(/https?:\/\//, '').replace(/^www\./, '').split('/')[0]
-          } else {
-            domain = r.empresa.toLowerCase().replace(/[^a-z0-9]/g, '') + '.com'
-          }
           const url = 'https://api.prospeo.io/email-finder'
           const res = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-KEY': prospeoKey },
-            body: JSON.stringify({ first_name: first, last_name: last, company: r.empresa, domain }),
+            body: JSON.stringify({
+              first_name: r.first_name, last_name: r.last_name,
+              company: r.empresa, domain: r.empresa_dominio,
+            }),
           })
           if (res.ok) {
             const data = await res.json()
-            if (data?.response?.email && isEmailValido(data.response.email)) {
-              r.email = data.response.email
+            const found = data?.response?.email
+            if (found && isEmailValido(found) && !isEmailGenerico(found)) {
+              r.email = found
               r.emailFuente = 'Prospeo'
-              r.score = Math.min(r.score + 20, 100)
+              r.score = Math.min(r.score + 25, 100)
               prospeoCount++
             }
           }
@@ -149,7 +179,6 @@ export async function POST(req: NextRequest) {
       fuentesUsadas['Prospeo'] = { resultados: prospeoCount, status: 'ok' }
     }
 
-    // SNOV.IO - segundo fallback para emails
     const snovUser = process.env.SNOV_USER_ID || ''
     const snovSecret = process.env.SNOV_SECRET || ''
     let snovCount = 0
@@ -163,23 +192,19 @@ export async function POST(req: NextRequest) {
         const tokenData = await tokenRes.json()
         const accessToken = tokenData.access_token
         if (accessToken) {
-          const sinEmail = apolloResults.filter(r => !r.email && r.contacto && r.contacto !== 'Sin nombre').slice(0, 5)
+          const sinEmail = apolloResults.filter((r: any) => !r.email && r.first_name && r.last_name && r.empresa_dominio).slice(0, 5)
           await Promise.all(sinEmail.map(async (r: any) => {
             try {
-              const [first, ...rest] = r.contacto.split(' ')
-              const last = rest.join(' ')
-              if (!first || !last) return
-              const domain = (r.empresa_dominio || '').replace(/https?:\/\//, '').replace(/^www\./, '').split('/')[0] || (r.empresa.toLowerCase().replace(/[^a-z0-9]/g, '') + '.com')
-              const snovUrl = 'https://api.snov.io/v1/get-emails-from-names?access_token=' + accessToken + '&firstName=' + encodeURIComponent(first) + '&lastName=' + encodeURIComponent(last) + '&domain=' + encodeURIComponent(domain)
+              const snovUrl = 'https://api.snov.io/v1/get-emails-from-names?access_token=' + accessToken + '&firstName=' + encodeURIComponent(r.first_name) + '&lastName=' + encodeURIComponent(r.last_name) + '&domain=' + encodeURIComponent(r.empresa_dominio)
               const snovRes = await fetch(snovUrl)
               if (snovRes.ok) {
                 const snovData = await snovRes.json()
                 const emails = snovData?.emails || []
-                const validEmail = emails.find((e: any) => isEmailValido(e.email))?.email
-                if (validEmail) {
-                  r.email = validEmail
+                const valid = emails.find((e: any) => isEmailValido(e.email) && !isEmailGenerico(e.email))?.email
+                if (valid) {
+                  r.email = valid
                   r.emailFuente = 'Snov.io'
-                  r.score = Math.min(r.score + 15, 100)
+                  r.score = Math.min(r.score + 20, 100)
                   snovCount++
                 }
               }
@@ -187,35 +212,33 @@ export async function POST(req: NextRequest) {
           }))
         }
         fuentesUsadas['Snov.io'] = { resultados: snovCount, status: 'ok' }
-      } catch {
-        fuentesUsadas['Snov.io'] = { resultados: 0, status: 'error' }
-      }
+      } catch { fuentesUsadas['Snov.io'] = { resultados: 0, status: 'error' } }
     }
 
-    // HUNTER.IO - tercer fallback
     const hunterKey = process.env.HUNTER_API_KEY || ''
     let hunterCount = 0
     if (hunterKey && apolloResults.length > 0) {
-      const sinEmail = apolloResults.filter(r => !r.email && r.empresa).slice(0, 5)
+      const sinEmail = apolloResults.filter((r: any) => !r.email && r.first_name && r.last_name && r.empresa_dominio).slice(0, 5)
       await Promise.all(sinEmail.map(async (r: any) => {
         try {
-          const domain = r.empresa.toLowerCase().replace(/[^a-z0-9]/g, '') + '.com.mx'
-          const hunterUrl = 'https://api.hunter.io/v2/domain-search?domain=' + domain + '&api_key=' + hunterKey + '&limit=1'
-          const hunterRes = await fetch(hunterUrl)
-          const hunterData = await hunterRes.json()
-          const firstEmail = hunterData.data?.emails?.[0]
-          if (firstEmail && isEmailValido(firstEmail.value)) {
-            r.email = firstEmail.value
-            r.emailFuente = 'Hunter.io'
-            r.score = Math.min(r.score + 10, 100)
-            hunterCount++
+          const url = 'https://api.hunter.io/v2/email-finder?domain=' + encodeURIComponent(r.empresa_dominio) + '&first_name=' + encodeURIComponent(r.first_name) + '&last_name=' + encodeURIComponent(r.last_name) + '&api_key=' + hunterKey
+          const res = await fetch(url)
+          if (res.ok) {
+            const data = await res.json()
+            const found = data?.data?.email
+            const score = data?.data?.score || 0
+            if (found && isEmailValido(found) && score >= 50 && !isEmailGenerico(found)) {
+              r.email = found
+              r.emailFuente = 'Hunter.io'
+              r.score = Math.min(r.score + 15, 100)
+              hunterCount++
+            }
           }
         } catch {}
       }))
       fuentesUsadas['Hunter.io'] = { resultados: hunterCount, status: 'ok' }
     }
 
-    // DENUE INEGI
     let denueResults: any[] = []
     try {
       const token = process.env.DENUE_TOKEN || ''
@@ -226,20 +249,20 @@ export async function POST(req: NextRequest) {
       if (denueRes.ok) {
         const denueData = await denueRes.json()
         denueResults = (Array.isArray(denueData) ? denueData : []).slice(0, 10).map((e: any) => ({
-          id: 'denue_' + e.id,empresa: e.nom_estab || 'Sin nombre',industria: e.nombre_act || 'Sin clasificar',
-          ciudad: (e.municipio || '') + ', ' + (e.entidad || ''),empleados: e.per_ocu || 'Sin datos',
-          contacto: 'Sin datos',cargo: 'Sin datos',
-          email: null,emailOculto: true,emailFuente: null,
-          telefono: e.telefono || null,telefonoOculto: true,telefonoFuente: e.telefono ? 'DENUE INEGI' : null,
-          linkedin: null,score: e.telefono ? 60 : 40,fuente: 'DENUE INEGI',
+          id: 'denue_' + e.id, empresa: e.nom_estab || 'Sin nombre',
+          industria: e.nombre_act || 'Sin clasificar',
+          ciudad: (e.municipio || '') + ', ' + (e.entidad || ''),
+          empleados: e.per_ocu || 'Sin datos', contacto: 'Sin datos', cargo: 'Sin datos',
+          email: null, emailOculto: true, emailFuente: null,
+          telefono: e.telefono || null, telefonoOculto: true, telefonoFuente: e.telefono ? 'DENUE INEGI' : null,
+          linkedin: null, score: e.telefono ? 60 : 40, fuente: 'DENUE INEGI',
         }))
         fuentesUsadas['DENUE INEGI'] = { resultados: denueResults.length, status: 'ok' }
+      } else {
+        fuentesUsadas['DENUE INEGI'] = { resultados: 0, status: 'error' }
       }
-    } catch {
-      fuentesUsadas['DENUE INEGI'] = { resultados: 0, status: 'error' }
-    }
+    } catch { fuentesUsadas['DENUE INEGI'] = { resultados: 0, status: 'error' } }
 
-    // ROCKETREACH
     let rrResults: any[] = []
     try {
       const rrKey = process.env.ROCKETREACH_API_KEY || ''
@@ -255,22 +278,20 @@ export async function POST(req: NextRequest) {
         if (rrRes.ok) {
           const rrData = await rrRes.json()
           rrResults = (rrData.profiles || []).slice(0, 10).map((p: any) => ({
-            id: 'rr_' + (p.id || Math.random()),empresa: p.current_employer || 'Sin nombre',
-            industria: p.industry || 'Sin clasificar',ciudad: p.location || estado || 'México',
-            empleados: 'Sin datos',contacto: ((p.first_name || '') + ' ' + (p.last_name || '')).trim(),
+            id: 'rr_' + (p.id || Math.random()), empresa: p.current_employer || 'Sin nombre',
+            industria: p.industry || 'Sin clasificar', ciudad: p.location || estado || 'México',
+            empleados: 'Sin datos', contacto: ((p.first_name || '') + ' ' + (p.last_name || '')).trim(),
             cargo: p.current_title || 'Sin cargo',
-            email: limpiarEmail(p.email),emailOculto: true,emailFuente: limpiarEmail(p.email) ? 'RocketReach' : null,
-            telefono: null,telefonoOculto: true,telefonoFuente: null,
-            linkedin: p.linkedin_url || null,score: p.email ? 80 : 50,fuente: 'RocketReach',
+            email: limpiarEmail(p.email), emailOculto: true,
+            emailFuente: limpiarEmail(p.email) ? 'RocketReach' : null,
+            telefono: null, telefonoOculto: true, telefonoFuente: null,
+            linkedin: p.linkedin_url || null, score: p.email ? 80 : 50, fuente: 'RocketReach',
           }))
           fuentesUsadas['RocketReach'] = { resultados: rrResults.length, status: 'ok' }
         }
       }
-    } catch {
-      fuentesUsadas['RocketReach'] = { resultados: 0, status: 'error' }
-    }
+    } catch { fuentesUsadas['RocketReach'] = { resultados: 0, status: 'error' } }
 
-    // PDL
     let pdlResults: any[] = []
     try {
       const pdlKey = process.env.PDL_API_KEY || ''
@@ -285,7 +306,7 @@ export async function POST(req: NextRequest) {
         if (pdlRes.ok) {
           const pdlData = await pdlRes.json()
           pdlResults = (pdlData.data || []).slice(0, 10).map((p: any) => ({
-            id: 'pdl_' + (p.id || Math.random()),empresa: p.job_company_name || 'Sin nombre',
+            id: 'pdl_' + (p.id || Math.random()), empresa: p.job_company_name || 'Sin nombre',
             industria: p.industry || 'Sin clasificar',
             ciudad: p.location_locality || p.location_region || 'México',
             empleados: p.job_company_size || 'Sin datos',
@@ -294,18 +315,15 @@ export async function POST(req: NextRequest) {
             email: limpiarEmail(p.work_email || p.personal_emails?.[0]),
             emailOculto: true,
             emailFuente: limpiarEmail(p.work_email || p.personal_emails?.[0]) ? 'PDL' : null,
-            telefono: p.mobile_phone || null,telefonoOculto: true,
+            telefono: p.mobile_phone || null, telefonoOculto: true,
             telefonoFuente: p.mobile_phone ? 'PDL' : null,
-            linkedin: p.linkedin_url || null,score: p.work_email ? 85 : 55,fuente: 'PDL',
+            linkedin: p.linkedin_url || null, score: p.work_email ? 85 : 55, fuente: 'PDL',
           }))
           fuentesUsadas['PDL'] = { resultados: pdlResults.length, status: 'ok' }
         }
       }
-    } catch {
-      fuentesUsadas['PDL'] = { resultados: 0, status: 'error' }
-    }
+    } catch { fuentesUsadas['PDL'] = { resultados: 0, status: 'error' } }
 
-    // DEDUP por persona+empresa
     const personaMap = new Map()
     const allResults = [...googleResults, ...apolloResults, ...denueResults, ...rrResults, ...pdlResults]
     for (const r of allResults) {
@@ -330,7 +348,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'No se encontraron resultados.', fuentes: fuentesUsadas })
     }
 
-    // Guardar verificados
     try {
       const { createClient } = await import('@supabase/supabase-js')
       const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)

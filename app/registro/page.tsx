@@ -107,7 +107,7 @@ export default function RegistroEmpresa() {
     <div style={s}>
       <div style={{maxWidth:'480px',margin:'0 auto'}}>
         <div style={{textAlign:'center',marginBottom:'32px'}}>
-          <img src="/1.svg" alt="CLAIENT" style={{height:'32px',marginBottom:'16px'}} />
+          <img src="/1.svg" alt="CLAIENT" style={{height:'80px',marginBottom:'16px'}} />
           <h2 style={{color:'#fff',fontSize:'22px',marginBottom:'8px'}}>Verifica tu información</h2>
           <p style={{color:'#6b7280',fontSize:'14px'}}>Confirma tu email y teléfono para activar tu empresa.</p>
         </div>
@@ -146,7 +146,7 @@ export default function RegistroEmpresa() {
     <div style={s}>
       <div style={{maxWidth:'700px',margin:'0 auto'}}>
         <div style={{textAlign:'center',marginBottom:'40px'}}>
-          <img src="/1.svg" alt="CLAIENT" style={{height:'32px',marginBottom:'24px'}} />
+          <img src="/1.svg" alt="CLAIENT" style={{height:'80px',marginBottom:'24px'}} />
           <h1 style={{fontSize:'28px',fontWeight:'600',color:'#fff',marginBottom:'8px'}}>Registra tu empresa</h1>
           <p style={{color:'#6b7280',fontSize:'15px'}}>Aparece en las búsquedas de compradores B2B activos en México. Registro gratuito.</p>
         </div>

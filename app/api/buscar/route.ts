@@ -184,18 +184,21 @@ export async function POST(req: NextRequest) {
       if (sinEmail.length === 0) prospeoStatus = 'sin_dominio'
       await Promise.all(sinEmail.map(async (r: any) => {
         try {
-          const url = 'https://api.prospeo.io/email-finder'
+          const url = "https://api.prospeo.io/enrich-person"
           const res = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-KEY': prospeoKey },
             body: JSON.stringify({
-              first_name: r.first_name, last_name: r.last_name,
-              company: r.empresa, domain: r.empresa_dominio,
+              only_verified_email: true,
+              data: {
+                full_name: r.first_name + ' ' + r.last_name,
+                company_website: r.empresa_dominio,
+              },
             }),
           })
           if (res.ok) {
             const data = await res.json()
-            const found = data?.response?.email
+            const found = data?.response?.email?.email || data?.response?.email
             if (found && isEmailValido(found) && !isEmailGenerico(found)) {
               r.email = found
               r.emailFuente = 'Prospeo'

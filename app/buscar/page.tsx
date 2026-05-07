@@ -61,6 +61,8 @@ type Resultado = {
   telefono: string | null
   emailOculto: boolean
   telefonoOculto: boolean
+  emailFuente?: string | null
+  telefonoFuente?: string | null
   score: number
   linkedin?: string
 }
@@ -107,6 +109,7 @@ export default function Buscador() {
   const [seleccionados, setSeleccionados] = useState<string[]>([])
   const [creditos, setCreditos] = useState(1000)
   const [emailsRevelados, setEmailsRevelados] = useState<string[]>([])
+  const [fuentesConsultadas, setFuentesConsultadas] = useState<Record<string, { resultados: number; status: string }>>({})
   const [telefonosRevelados, setTelefonosRevelados] = useState<string[]>([])
   const [savedSearches, setSavedSearches] = useState<SavedSearch[]>([
     { id: 1, nombre: 'Transporte Monterrey RH', filtros: { industria: 'Transporte y Logística', estado: 'Nuevo León' }, fecha: '28 abr 2026' },
@@ -201,6 +204,7 @@ export default function Buscador() {
         }),
       })
       const data = await res.json()
+      if (data.fuentes) setFuentesConsultadas(data.fuentes)
       if (data.resultados && data.resultados.length > 0) {
         setResultados(data.resultados)
       } else if (data.error) {
@@ -447,6 +451,26 @@ export default function Buscador() {
           </div>
         )}
 
+        {/* Panel de fuentes consultadas */}
+        {Object.keys(fuentesConsultadas).length > 0 && resultados.length > 0 && (
+          <div className="bg-[#0d0d0d] border border-white/5 rounded-xl p-4 mb-4">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse"></div>
+              <span className="text-xs text-white/60 uppercase tracking-wider font-medium">Fuentes consultadas</span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {Object.entries(fuentesConsultadas).map(([fuente, info]) => (
+                <div key={fuente} className={`flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg border ${info.status === 'ok' && info.resultados > 0 ? 'bg-emerald-500/5 border-emerald-500/20 text-emerald-400' : info.status === 'ok' ? 'bg-white/5 border-white/10 text-white/40' : 'bg-red-500/5 border-red-500/20 text-red-400/70'}`}>
+                  <span className="font-medium">{fuente}</span>
+                  <span className="text-[10px] opacity-70">
+                    {info.status === 'error' ? 'error' : info.resultados + ' resultado' + (info.resultados !== 1 ? 's' : '')}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Resultados */}
         {resultados.length > 0 && (
           <div>
@@ -501,7 +525,10 @@ export default function Buscador() {
                           {!r.email ? (
                             <span className="text-xs text-white/30">No disponible</span>
                           ) : emailsRevelados.includes(r.id) ? (
-                            <div className="text-sm text-white/80">{r.email}</div>
+                            <div>
+                              <div className="text-sm text-white/80">{r.email}</div>
+                              {r.emailFuente && <div className="text-[10px] text-[#0cc0df]/60 mt-0.5">via {r.emailFuente}</div>}
+                            </div>
                           ) : (
                             <button onClick={() => revelarEmail(r.id)} className="flex items-center gap-1.5 text-xs text-[#0cc0df] border border-[#0cc0df]/30 rounded-lg px-2.5 py-1.5 hover:bg-[#0cc0df]/10 transition">
                               <Eye className="w-3.5 h-3.5" />Revelar email
@@ -512,7 +539,10 @@ export default function Buscador() {
                           {!r.telefono ? (
                             <span className="text-xs text-white/30">No disponible</span>
                           ) : telefonosRevelados.includes(r.id) ? (
-                            <div className="text-sm text-white/80">{r.telefono}</div>
+                            <div>
+                              <div className="text-sm text-white/80">{r.telefono}</div>
+                              {r.telefonoFuente && <div className="text-[10px] text-[#0cc0df]/60 mt-0.5">via {r.telefonoFuente}</div>}
+                            </div>
                           ) : (
                             <button onClick={() => revelarTelefono(r.id)} className="flex items-center gap-1.5 text-xs text-[#0cc0df] border border-[#0cc0df]/30 rounded-lg px-2.5 py-1.5 hover:bg-[#0cc0df]/10 transition">
                               <Eye className="w-3.5 h-3.5" />Revelar tel.

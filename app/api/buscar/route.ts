@@ -126,7 +126,7 @@ export async function POST(req: NextRequest) {
           empleados: formatEmpleados(p.organization?.estimated_num_employees),
           contacto: ((p.first_name || '') + ' ' + (p.last_name || '')).trim() || 'Sin nombre',
           cargo: p.title || 'Sin cargo',
-          email: p.email || null,
+          email: limpiarEmail(p.email),
           emailOculto: true,
           telefono: p.phone_numbers?.[0]?.sanitized_number || null,
           telefonoOculto: true,
@@ -218,7 +218,7 @@ export async function POST(req: NextRequest) {
             empleados: 'Sin datos',
             contacto: ((p.first_name || '') + ' ' + (p.last_name || '')).trim(),
             cargo: p.current_title || 'Sin cargo',
-            email: p.email || null,
+            email: limpiarEmail(p.email),
             emailOculto: true,
             telefono: null,
             telefonoOculto: true,
@@ -256,7 +256,7 @@ export async function POST(req: NextRequest) {
             empleados: p.job_company_size || 'Sin datos',
             contacto: ((p.first_name || '') + ' ' + (p.last_name || '')).trim(),
             cargo: p.job_title || 'Sin cargo',
-            email: p.work_email || p.personal_emails?.[0] || null,
+            email: limpiarEmail(p.work_email || p.personal_emails?.[0] || null),
             emailOculto: true,
             telefono: p.mobile_phone || null,
             telefonoOculto: true,
@@ -360,6 +360,23 @@ function formatEmpleados(n: number | undefined): string {
   if (n <= 1000) return '501 - 1,000'
   if (n <= 5000) return '1,001 - 5,000'
   return '5,000+'
+}
+
+
+function isEmailValido(email: string | null): boolean {
+  if (!email) return false
+  const e = email.toLowerCase().trim()
+  if (e.includes('email_not_unlocked')) return false
+  if (e.includes('not_unlocked')) return false
+  if (e.includes('domain.com')) return false
+  if (e === '' || e.length < 5) return false
+  if (!e.includes('@')) return false
+  return true
+}
+
+function limpiarEmail(email: string | null): string | null {
+  if (!isEmailValido(email)) return null
+  return email
 }
 
 function calcScore(p: any): number {

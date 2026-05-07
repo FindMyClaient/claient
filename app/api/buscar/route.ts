@@ -332,16 +332,17 @@ export async function POST(req: NextRequest) {
     try {
       const pdlKey = process.env.PDL_API_KEY || ''
       if (pdlKey) {
-        const pdlQuery: any = { location_country: 'mexico', size: 10 }
-        if (busqueda) pdlQuery.job_company_name = busqueda
+        const must: any[] = [{ term: { location_country: 'mexico' } }]
+        if (busqueda) must.push({ term: { job_company_name: busqueda.toLowerCase() } })
+        if (estado && estado !== 'Todo México') must.push({ match: { location_region: estado } })
         const pdlRes = await fetch('https://api.peopledatalabs.com/v5/person/search', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'X-Api-Key': pdlKey },
-          body: JSON.stringify({ query: pdlQuery, size: 10, dataset: 'all' }),
+          body: JSON.stringify({ query: { bool: { must } }, size: 25, dataset: 'all' }),
         })
         if (pdlRes.ok) {
           const pdlData = await pdlRes.json()
-          pdlResults = (pdlData.data || []).slice(0, 10).map((p: any) => ({
+          pdlResults = (pdlData.data || []).slice(0, 25).map((p: any) => ({
             id: 'pdl_' + (p.id || Math.random()), empresa: p.job_company_name || 'Sin nombre',
             industria: p.industry || 'Sin clasificar',
             ciudad: p.location_locality || p.location_region || 'México',

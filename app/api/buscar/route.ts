@@ -299,6 +299,37 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'No se encontraron resultados. Intenta con otros filtros.' })
     }
 
+    
+    // ── GUARDAR REGISTROS COMPLETOS EN BD ───────────────
+    try {
+      const { createClient } = await import('@supabase/supabase-js')
+      const supabase = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      )
+      const completos = resultados.filter((r: any) => r.email && r.telefono && r.empresa !== 'Sin nombre')
+      if (completos.length > 0) {
+        await Promise.all(completos.map(async (r: any) => {
+          await supabase.from('prospectos_verificados').upsert({
+            empresa: r.empresa,
+            industria: r.industria,
+            ciudad: r.ciudad,
+            empleados: r.empleados,
+            contacto: r.contacto,
+            cargo: r.cargo,
+            email: r.email,
+            telefono: r.telefono,
+            linkedin: r.linkedin,
+            fuente: r.fuente,
+            score: r.score,
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'email,empresa', ignoreDuplicates: false })
+        }))
+      }
+    } catch (e) {
+      console.error('Error guardando prospectos:', e)
+    }
+
     return NextResponse.json({ resultados, total: resultados.length })
 
   } catch (err: any) {

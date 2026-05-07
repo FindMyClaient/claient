@@ -19,19 +19,26 @@ function isEmailGenerico(email: string): boolean {
   return prefijos.some(p => e.startsWith(p))
 }
 
-async function getApolloDomain(empresa: string, apiKey: string): Promise<string | null> {
+function normalizarEmpresa(s: string): string {
+  return (s || '').toLowerCase().replace(/[^a-z0-9]/g, '').replace(/^(grupo|empresa|sa|sade|sadecv|sapi|sapidecv|srl)/, '')
+}
+
+async function getApolloDomainByName(empresa: string, apiKey: string): Promise<string | null> {
   try {
     const url = 'https://api.apollo.io/v1/organizations/search'
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Api-Key': apiKey },
-      body: JSON.stringify({ q_organization_name: empresa, page: 1, per_page: 1 }),
+      body: JSON.stringify({ q_organization_name: empresa, page: 1, per_page: 3 }),
     })
     if (!res.ok) return null
     const data = await res.json()
-    const org = data.organizations?.[0] || data.accounts?.[0]
-    if (!org) return null
-    const domain = org.primary_domain || org.website_url || null
+    const orgs = data.organizations || []
+    if (orgs.length === 0) return null
+    const empresaNorm = normalizarEmpresa(empresa)
+    let mejor = orgs.find((o: any) => normalizarEmpresa(o.name).includes(empresaNorm) || empresaNorm.includes(normalizarEmpresa(o.name)))
+    if (!mejor) mejor = orgs[0]
+    const domain = mejor.primary_domain || mejor.website_url || null
     if (!domain) return null
     return domain.replace(/https?:\/\//, '').replace(/^www\./, '').split('/')[0]
   } catch { return null }
@@ -133,17 +140,37 @@ export async function POST(req: NextRequest) {
       }
     } catch { fuentesUsadas['Apollo'] = { resultados: 0, status: 'error' } }
 
-    const empresasUnicas = Array.from(new Set(apolloResults.filter(r => !r.empresa_dominio).map(r => r.empresa)))
+    // ENRIQUECER DOMINIOS - usa el termino original de busqueda y normaliza
     const dominiosMap = new Map<string, string>()
-    if (apolloKey && empresasUnicas.length > 0) {
-      await Promise.all(empresasUnicas.slice(0, 10).map(async (empresa) => {
-        const domain = await getApolloDomain(empresa as string, apolloKey)
-        if (domain) dominiosMap.set(empresa as string, domain)
+    if (apolloKey && apolloResults.length > 0) {
+      // Si el usuario busco un nombre de empresa, usamos ese termino para buscar el dominio una sola vez
+      const terminoBusqueda = busqueda?.trim()
+      if (terminoBusqueda) {
+        const dom = await getApolloDomainByName(terminoBusqueda, apolloKey)
+        if (dom) {
+          // Aplicar a todos los resultados que pertenezcan a esa empresa
+          apolloResults.forEach((r: any) => {
+            const norm1 = normalizarEmpresa(r.empresa)
+            const norm2 = normalizarEmpresa(terminoBusqueda)
+            if (norm1.includes(norm2) || norm2.includes(norm1)) {
+              if (!r.empresa_dominio) r.empresa_dominio = dom
+            }
+          })
+          dominiosMap.set(terminoBusqueda, dom)
+        }
+      }
+      // Para los que aun no tienen dominio, hacer lookup por empresa
+      const sinDominio = apolloResults.filter((r: any) => !r.empresa_dominio)
+      const empresasUnicas = Array.from(new Set(sinDominio.map((r: any) => r.empresa)))
+      await Promise.all(empresasUnicas.slice(0, 8).map(async (empresa) => {
+        const dom = await getApolloDomainByName(empresa as string, apolloKey)
+        if (dom) dominiosMap.set(empresa as string, dom)
       }))
       apolloResults.forEach((r: any) => {
         if (!r.empresa_dominio && dominiosMap.has(r.empresa)) {
           r.empresa_dominio = dominiosMap.get(r.empresa)
-        } else if (r.empresa_dominio) {
+        }
+        if (r.empresa_dominio) {
           r.empresa_dominio = r.empresa_dominio.replace(/https?:\/\//, '').replace(/^www\./, '').split('/')[0]
         }
       })
@@ -151,8 +178,10 @@ export async function POST(req: NextRequest) {
 
     const prospeoKey = process.env.PROSPEO_API_KEY || ''
     let prospeoCount = 0
+    let prospeoStatus = 'ok'
     if (prospeoKey && apolloResults.length > 0) {
       const sinEmail = apolloResults.filter((r: any) => !r.email && r.first_name && r.last_name && r.empresa_dominio).slice(0, 10)
+      if (sinEmail.length === 0) prospeoStatus = 'sin_dominio'
       await Promise.all(sinEmail.map(async (r: any) => {
         try {
           const url = 'https://api.prospeo.io/email-finder'
@@ -176,12 +205,13 @@ export async function POST(req: NextRequest) {
           }
         } catch {}
       }))
-      fuentesUsadas['Prospeo'] = { resultados: prospeoCount, status: 'ok' }
+      fuentesUsadas['Prospeo'] = { resultados: prospeoCount, status: prospeoStatus }
     }
 
     const snovUser = process.env.SNOV_USER_ID || ''
     const snovSecret = process.env.SNOV_SECRET || ''
     let snovCount = 0
+    let snovStatus = 'ok'
     if (snovUser && snovSecret && apolloResults.length > 0) {
       try {
         const tokenRes = await fetch('https://api.snov.io/v1/oauth/access_token', {
@@ -193,6 +223,7 @@ export async function POST(req: NextRequest) {
         const accessToken = tokenData.access_token
         if (accessToken) {
           const sinEmail = apolloResults.filter((r: any) => !r.email && r.first_name && r.last_name && r.empresa_dominio).slice(0, 5)
+          if (sinEmail.length === 0) snovStatus = 'sin_dominio'
           await Promise.all(sinEmail.map(async (r: any) => {
             try {
               const snovUrl = 'https://api.snov.io/v1/get-emails-from-names?access_token=' + accessToken + '&firstName=' + encodeURIComponent(r.first_name) + '&lastName=' + encodeURIComponent(r.last_name) + '&domain=' + encodeURIComponent(r.empresa_dominio)
@@ -210,15 +241,17 @@ export async function POST(req: NextRequest) {
               }
             } catch {}
           }))
-        }
-        fuentesUsadas['Snov.io'] = { resultados: snovCount, status: 'ok' }
+        } else { snovStatus = 'error' }
+        fuentesUsadas['Snov.io'] = { resultados: snovCount, status: snovStatus }
       } catch { fuentesUsadas['Snov.io'] = { resultados: 0, status: 'error' } }
     }
 
     const hunterKey = process.env.HUNTER_API_KEY || ''
     let hunterCount = 0
+    let hunterStatus = 'ok'
     if (hunterKey && apolloResults.length > 0) {
       const sinEmail = apolloResults.filter((r: any) => !r.email && r.first_name && r.last_name && r.empresa_dominio).slice(0, 5)
+      if (sinEmail.length === 0) hunterStatus = 'sin_dominio'
       await Promise.all(sinEmail.map(async (r: any) => {
         try {
           const url = 'https://api.hunter.io/v2/email-finder?domain=' + encodeURIComponent(r.empresa_dominio) + '&first_name=' + encodeURIComponent(r.first_name) + '&last_name=' + encodeURIComponent(r.last_name) + '&api_key=' + hunterKey
@@ -236,7 +269,7 @@ export async function POST(req: NextRequest) {
           }
         } catch {}
       }))
-      fuentesUsadas['Hunter.io'] = { resultados: hunterCount, status: 'ok' }
+      fuentesUsadas['Hunter.io'] = { resultados: hunterCount, status: hunterStatus }
     }
 
     let denueResults: any[] = []

@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
     const { busqueda, industria, departamento, headcount, estado, seniority, keywords, coords } = body
 
     const payload: Record<string, any> = {
-      page: 1, per_page: 25,
+      page: 1, per_page: 100,
       person_locations: estado && estado !== 'Todo México' ? [estado + ', Mexico'] : ['Mexico'],
     }
     if (busqueda) payload.q_keywords = busqueda
@@ -89,7 +89,7 @@ export async function POST(req: NextRequest) {
         const mapsUrl = 'https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=' + coords.lat + ',' + coords.lng + '&radius=' + radius + '&keyword=' + encodeURIComponent(keyword) + '&language=es&key=' + (process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY || '')
         const mapsRes = await fetch(mapsUrl)
         const mapsData = await mapsRes.json()
-        googleResults = (mapsData.results || []).slice(0, 10).map((place: any) => ({
+        googleResults = (mapsData.results || []).map((place: any) => ({
           id: 'maps_' + place.place_id, empresa: place.name,
           industria: place.types?.[0]?.replace(/_/g, ' ') || 'Local',
           ciudad: place.vicinity || estado || 'México',
@@ -280,11 +280,11 @@ export async function POST(req: NextRequest) {
       const token = process.env.DENUE_TOKEN || ''
       const q = busqueda || industria || 'empresa'
       const entidad = estado && estado !== 'Todo México' ? '09' : '00'
-      const denueUrl = 'https://www.inegi.org.mx/app/api/denue/v1/consulta/BuscarAreaActividadDescripcion/' + encodeURIComponent(q) + '/' + entidad + '/0/0/1/25/0/0/0/0/' + token
+      const denueUrl = 'https://www.inegi.org.mx/app/api/denue/v1/consulta/BuscarAreaActividadDescripcion/' + encodeURIComponent(q) + '/' + entidad + '/0/0/1/100/0/0/0/0/' + token
       const denueRes = await fetch(denueUrl)
       if (denueRes.ok) {
         const denueData = await denueRes.json()
-        denueResults = (Array.isArray(denueData) ? denueData : []).slice(0, 10).map((e: any) => ({
+        denueResults = (Array.isArray(denueData) ? denueData : []).map((e: any) => ({
           id: 'denue_' + e.id, empresa: e.nom_estab || 'Sin nombre',
           industria: e.nombre_act || 'Sin clasificar',
           ciudad: (e.municipio || '') + ', ' + (e.entidad || ''),
@@ -303,7 +303,7 @@ export async function POST(req: NextRequest) {
     try {
       const rrKey = process.env.ROCKETREACH_API_KEY || ''
       if (rrKey) {
-        const rrPayload: any = { start: 1, pageSize: 10 }
+        const rrPayload: any = { start: 1, pageSize: 100 }
         if (busqueda) rrPayload.name = busqueda
         rrPayload.location = estado && estado !== 'Todo México' ? [estado + ', Mexico'] : ['Mexico']
         const rrRes = await fetch('https://api.rocketreach.co/v2/api/search', {
@@ -313,7 +313,7 @@ export async function POST(req: NextRequest) {
         })
         if (rrRes.ok) {
           const rrData = await rrRes.json()
-          rrResults = (rrData.profiles || []).slice(0, 10).map((p: any) => ({
+          rrResults = (rrData.profiles || []).map((p: any) => ({
             id: 'rr_' + (p.id || Math.random()), empresa: p.current_employer || 'Sin nombre',
             industria: p.industry || 'Sin clasificar', ciudad: p.location || estado || 'México',
             empleados: 'Sin datos', contacto: ((p.first_name || '') + ' ' + (p.last_name || '')).trim(),
@@ -335,14 +335,36 @@ export async function POST(req: NextRequest) {
         const must: any[] = [{ term: { location_country: 'mexico' } }]
         if (busqueda) must.push({ term: { job_company_name: busqueda.toLowerCase() } })
         if (estado && estado !== 'Todo México') must.push({ match: { location_region: estado } })
+        if (departamento && departamento !== 'Todos los departamentos') {
+          const deptMap: Record<string, string> = {
+            'Recursos Humanos': 'human_resources',
+            'Compras y Adquisiciones': 'operations',
+            'Logística': 'operations',
+            'Finanzas': 'finance',
+            'Marketing': 'marketing',
+            'Ventas': 'sales',
+            'Tecnología': 'engineering',
+            'Operaciones': 'operations',
+          }
+          if (deptMap[departamento]) must.push({ term: { job_title_role: deptMap[departamento] } })
+        }
+        if (seniority && seniority !== 'Cualquier nivel') {
+          const seniorMap: Record<string, string> = {
+            'Director / C-Level': 'cxo',
+            'Gerente / Manager': 'manager',
+            'Coordinador / Supervisor': 'senior',
+            'Ejecutivo / Analista': 'entry',
+          }
+          if (seniorMap[seniority]) must.push({ term: { job_title_levels: seniorMap[seniority] } })
+        }
         const pdlRes = await fetch('https://api.peopledatalabs.com/v5/person/search', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'X-Api-Key': pdlKey },
-          body: JSON.stringify({ query: { bool: { must } }, size: 25, dataset: 'all' }),
+          body: JSON.stringify({ query: { bool: { must } }, size: 100, dataset: 'all' }),
         })
         if (pdlRes.ok) {
           const pdlData = await pdlRes.json()
-          pdlResults = (pdlData.data || []).slice(0, 25).map((p: any) => ({
+          pdlResults = (pdlData.data || []).map((p: any) => ({
             id: 'pdl_' + (p.id || Math.random()), empresa: p.job_company_name || 'Sin nombre',
             industria: p.industry || 'Sin clasificar',
             ciudad: p.location_locality || p.location_region || 'México',

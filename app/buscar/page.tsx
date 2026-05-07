@@ -498,8 +498,10 @@ export default function Buscador() {
                         <td className="px-4 py-4 min-w-[150px]"><div className="text-sm font-medium text-white">{r.contacto}</div></td>
                         <td className="px-4 py-4 min-w-[200px]"><div className="text-sm text-white/70">{r.cargo}</div></td>
                         <td className="px-4 py-4 min-w-[220px]">
-                          {emailsRevelados.includes(r.id) ? (
-                            <div className="text-sm text-white/80">{r.email || 'No disponible'}</div>
+                          {!r.email ? (
+                            <span className="text-xs text-white/30">No disponible</span>
+                          ) : emailsRevelados.includes(r.id) ? (
+                            <div className="text-sm text-white/80">{r.email}</div>
                           ) : (
                             <button onClick={() => revelarEmail(r.id)} className="flex items-center gap-1.5 text-xs text-[#0cc0df] border border-[#0cc0df]/30 rounded-lg px-2.5 py-1.5 hover:bg-[#0cc0df]/10 transition">
                               <Eye className="w-3.5 h-3.5" />Revelar email
@@ -507,8 +509,10 @@ export default function Buscador() {
                           )}
                         </td>
                         <td className="px-4 py-4 min-w-[180px]">
-                          {telefonosRevelados.includes(r.id) ? (
-                            <div className="text-sm text-white/80">{r.telefono || 'No disponible'}</div>
+                          {!r.telefono ? (
+                            <span className="text-xs text-white/30">No disponible</span>
+                          ) : telefonosRevelados.includes(r.id) ? (
+                            <div className="text-sm text-white/80">{r.telefono}</div>
                           ) : (
                             <button onClick={() => revelarTelefono(r.id)} className="flex items-center gap-1.5 text-xs text-[#0cc0df] border border-[#0cc0df]/30 rounded-lg px-2.5 py-1.5 hover:bg-[#0cc0df]/10 transition">
                               <Eye className="w-3.5 h-3.5" />Revelar tel.

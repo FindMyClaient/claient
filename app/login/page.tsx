@@ -13,7 +13,7 @@ export default function Login() {
     setLoading(true)
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: `${window.location.origin}/` }
+      options: { redirectTo: `${window.location.origin}/auth/callback` }
     })
     if (error) setError(error.message)
     setLoading(false)
@@ -26,7 +26,7 @@ export default function Login() {
     setError('')
     const { error } = await supabase.auth.signInWithOtp({
       email,
-      options: { emailRedirectTo: `${window.location.origin}/` }
+      options: { emailRedirectTo: `${window.location.origin}/auth/callback` }
     })
     if (error) setError(error.message)
     else setSent(true)

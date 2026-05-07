@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase'
+import { createServerSupabase } from '@/lib/supabase-server'
 import { NextRequest, NextResponse } from 'next/server'
 
 export async function GET(request: NextRequest) {
@@ -7,7 +7,7 @@ export async function GET(request: NextRequest) {
   const next = searchParams.get('next') ?? '/buscar'
 
   if (code) {
-    const supabase = createClient()
+    const supabase = createServerSupabase()
     const { error } = await supabase.auth.exchangeCodeForSession(code)
     if (!error) {
       return NextResponse.redirect(origin + next)
